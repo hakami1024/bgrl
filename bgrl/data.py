@@ -6,6 +6,15 @@ from torch_geometric.data import InMemoryDataset
 from torch_geometric.transforms import NormalizeFeatures
 from torch_geometric.utils import to_undirected
 
+from ogb.nodeproppred import PygNodePropPredDataset
+
+
+def get_ogb(root, name = "ogbn-arxiv", transform=NormalizeFeatures()):
+    dataset = PygNodePropPredDataset(name = name, root = root, transform=transform)
+    data = dataset[0]
+    data.edge_index = to_undirected(data.edge_index)
+    return [data]
+
 
 def get_dataset(root, name, transform=NormalizeFeatures()):
     pyg_dataset_dict = {

@@ -20,7 +20,7 @@ flags.DEFINE_integer('num_eval_splits', 3, 'Number of different train/test split
 
 # Dataset.
 flags.DEFINE_enum('dataset', 'coauthor-cs',
-                  ['amazon-computers', 'amazon-photos', 'coauthor-cs', 'coauthor-physics', 'wiki-cs'],
+                  ['amazon-computers', 'amazon-photos', 'coauthor-cs', 'coauthor-physics', 'wiki-cs', 'ogbn-arxiv'],
                   'Which graph dataset to use.')
 flags.DEFINE_string('dataset_dir', './data', 'Where the dataset resides.')
 
@@ -42,7 +42,7 @@ flags.DEFINE_float('drop_edge_p_2', 0., 'Probability of edge dropout 2.')
 flags.DEFINE_float('drop_feat_p_2', 0., 'Probability of node feature dropout 2.')
 
 # Logging and checkpoint.
-flags.DEFINE_string('logdir', None, 'Where the checkpoint and logs are stored.')
+flags.DEFINE_string('logdir', './logs', 'Where the checkpoint and logs are stored.')
 flags.DEFINE_integer('log_steps', 10, 'Log information at every log_steps.')
 
 # Evaluation
@@ -65,12 +65,15 @@ def main(argv):
         file.write(FLAGS.flags_into_string())  # save config file
 
     # load data
-    if FLAGS.dataset != 'wiki-cs':
+    if FLAGS.dataset not in ['wiki-cs', 'ogbn-arxiv']:
         dataset = get_dataset(FLAGS.dataset_dir, FLAGS.dataset)
         num_eval_splits = FLAGS.num_eval_splits
-    else:
+    elif FLAGS.dataset == 'wiki-cs':
         dataset, train_masks, val_masks, test_masks = get_wiki_cs(FLAGS.dataset_dir)
         num_eval_splits = train_masks.shape[1]
+    else:
+        dataset = get_ogb(FLAGS.dataset_dir)
+        num_eval_splits = FLAGS.num_eval_splits
 
     data = dataset[0]  # all dataset include one graph
     log.info('Dataset {}, {}.'.format(dataset.__class__.__name__, data))
@@ -99,6 +102,7 @@ def main(argv):
     writer.add_custom_scalars(layout)
 
     def train(step):
+        # print('starting train')
         model.train()
 
         # update learning rate
@@ -111,7 +115,7 @@ def main(argv):
 
         # forward
         optimizer.zero_grad()
-
+        # print('starting forward step')
         x1, x2 = transform_1(data), transform_2(data)
 
         q1, y2 = model(x1, x2)
@@ -135,9 +139,11 @@ def main(argv):
         tmp_encoder = copy.deepcopy(model.online_encoder).eval()
         representations, labels = compute_representations(tmp_encoder, dataset, device)
 
-        if FLAGS.dataset != 'wiki-cs':
+        if FLAGS.dataset not in ['wiki-cs', 'ogbn-arxiv']:
             scores = fit_logistic_regression(representations.cpu().numpy(), labels.cpu().numpy(),
                                              data_random_seed=FLAGS.data_seed, repeat=FLAGS.num_eval_splits)
+        elif FLAGS.dataset == 'ogbn-arxiv':
+            raise Exception("Implement ogbn-arxiv eval via 100 steps of gradient descent using AdamW")
         else:
             scores = fit_logistic_regression_preset_splits(representations.cpu().numpy(), labels.cpu().numpy(),
                                                            train_masks, val_masks, test_masks)
